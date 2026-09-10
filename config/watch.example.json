@@ -1,0 +1,37 @@
+{
+  "settings": {
+    "intervalMinutes": 10,
+    "jitterPercent": 15,
+    "minRequestSpacingSeconds": 20,
+    "backoffBaseMinutes": 5,
+    "backoffMaxMinutes": 60,
+    "notifyOnInitialAvailability": true,
+    "staleAfterMinutes": 30,
+    "parserErrorThreshold": 3,
+    "transport": "auto",
+    "respectRobotsTxt": true,
+    "saveDebugOnParserError": true
+  },
+  "watches": [
+    {
+      "id": "miracosta-2026-11-20",
+      "hotel": "miracosta",
+      "checkIn": "2026-11-20",
+      "nights": 1,
+      "adults": 2,
+      "children": 0,
+      "roomKeywords": ["ポルト・パラディーゾ・サイド", "ハーバービュー"],
+      "enabled": true
+    },
+    {
+      "id": "miracosta-2026-11-21",
+      "hotel": "miracosta",
+      "checkIn": "2026-11-21",
+      "nights": 1,
+      "adults": 2,
+      "children": 0,
+      "roomKeywords": [],
+      "enabled": true
+    }
+  ]
+}

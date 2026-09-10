@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>__LABEL__</string>
+
+  <!-- Absolute paths only: launchd does not use your shell's PATH. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE_PATH__</string>
+    <string>__PROJECT_DIR__/dist/index.js</string>
+    <string>monitor</string>
+  </array>
+
+  <!-- The app reads .env and config/watch.json relative to this directory. -->
+  <key>WorkingDirectory</key>
+  <string>__PROJECT_DIR__</string>
+
+  <!-- Start automatically when you log in (and so, after a reboot). -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Restart if the process dies unexpectedly. A clean exit (Ctrl+C, or
+       `npm run stop-service`) exits 0 and is NOT restarted. -->
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <!-- Never respawn faster than this, so a crash loop cannot hammer anything. -->
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>StandardOutPath</key>
+  <string>__PROJECT_DIR__/logs/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__PROJECT_DIR__/logs/launchd.err.log</string>
+
+  <!-- No secrets here. The LINE token is read from .env at runtime, so this
+       file stays safe to read and safe to keep in a backup. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__PATH_VALUE__</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>LANG</key>
+    <string>ja_JP.UTF-8</string>
+  </dict>
+
+  <!-- Be a polite background job: lower CPU and I/O priority. -->
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+</dict>
+</plist>
