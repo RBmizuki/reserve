@@ -12,7 +12,8 @@ import { createHash } from 'node:crypto';
 import * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import {
-  BUSY_SIGNALS,
+  MAINTENANCE_SIGNALS,
+  QUEUE_SIGNALS,
   CAPTCHA_STRONG_SIGNALS,
   CAPTCHA_WEAK_SIGNALS,
   MAINTENANCE_PATH,
@@ -385,15 +386,29 @@ export function parseAvailability(body: string, options: ParseOptions): ParseRes
     };
   }
 
-  // 5. Congestion / maintenance: the site is asking us to come back later.
-  const busy = matchedSignals(visibleText, BUSY_SIGNALS);
-  if (busy.length > 0) {
+  // 5a. A virtual waiting room. Checked before maintenance wording, because the
+  //     queue page itself mentions the nightly maintenance window as a note and
+  //     would otherwise be reported as an outage.
+  const queued = matchedSignals(visibleText, QUEUE_SIGNALS);
+  if (queued.length > 0) {
     return {
       outcome: 'network_error',
       offers: [],
       rooms: [],
-      reason: `Site is busy or under maintenance (${busy[0]})`,
-      signals: busy.map((s) => `busy:${s}`),
+      reason: `Site is holding visitors in a queue (${queued[0]}) — will retry later, not waiting in line`,
+      signals: queued.map((s) => `busy:queue:${s}`),
+    };
+  }
+
+  // 5b. Scheduled maintenance (published as 03:00-05:00 JST).
+  const maintenance = matchedSignals(visibleText, MAINTENANCE_SIGNALS);
+  if (maintenance.length > 0) {
+    return {
+      outcome: 'network_error',
+      offers: [],
+      rooms: [],
+      reason: `Site is under maintenance (${maintenance[0]})`,
+      signals: maintenance.map((s) => `busy:maintenance:${s}`),
     };
   }
 

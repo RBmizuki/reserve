@@ -22,8 +22,12 @@ export const SYSTEM_KEYS = {
   lastSuccessfulCheck: 'lastSuccessfulCheck',
   monitorPid: 'monitorPid',
   monitorStartedAt: 'monitorStartedAt',
-  /** Set while the official site is positively reporting maintenance. */
-  maintenanceSince: 'maintenanceSince',
+  /**
+   * Set while the official site itself says it cannot serve us — a virtual
+   * waiting room, or the nightly maintenance window. Distinct from "we cannot
+   * tell what is going on", which is what the stale alarm is for.
+   */
+  siteBusySince: 'siteBusySince',
 } as const;
 
 export interface CycleDeps {
@@ -117,7 +121,7 @@ export async function runCheckCycle(deps: CycleDeps, watch: WatchCondition): Pro
     runtime.lastSuccessAt = nowIso;
     runtime.suspendedReason = null;
     storage.setSystemState(SYSTEM_KEYS.lastSuccessfulCheck, nowIso);
-    storage.setSystemState(SYSTEM_KEYS.maintenanceSince, '');
+    storage.setSystemState(SYSTEM_KEYS.siteBusySince, '');
 
     // The site is readable again: retract any structural alerts.
     if (runtime.monitorBroken === 1) {
@@ -168,13 +172,13 @@ export async function runCheckCycle(deps: CycleDeps, watch: WatchCondition): Pro
     runtime.state = 'unknown';
     runtime.consecutiveErrors += 1;
 
-    // Remember that the site itself told us it is down. This is not the
-    // monitor being blind, so it must not raise the "no successful check"
-    // alarm at 3am during the official maintenance window.
+    // Remember that the site itself told us to come back later (a queue, or
+    // the nightly maintenance window). This is not the monitor being blind, so
+    // it must not raise the "no successful check" alarm overnight.
     if (result.outcome === 'network_error' && result.signals.some((s) => s.startsWith('busy:'))) {
-      if (!storage.getSystemState(SYSTEM_KEYS.maintenanceSince)) {
-        storage.setSystemState(SYSTEM_KEYS.maintenanceSince, nowIso);
-        logger.info('Official site reports maintenance or congestion', {
+      if (!storage.getSystemState(SYSTEM_KEYS.siteBusySince)) {
+        storage.setSystemState(SYSTEM_KEYS.siteBusySince, nowIso);
+        logger.info('Official site says to come back later', {
           watch: watch.id,
           reason: result.reason,
         });

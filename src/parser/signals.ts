@@ -57,27 +57,44 @@ export const CAPTCHA_WEAK_SIGNALS: readonly string[] = [
 ];
 
 /**
- * The site is up but telling us to come back later (queue / congestion /
- * maintenance). Treated like a network error: back off, do not conclude
- * anything about availability.
+ * The official site is holding visitors in a virtual waiting room
+ * ("ただいまサイトが混雑しております / 順番にご案内します").
  *
- * These phrases are only trusted when the page shows no rooms. The official
- * site carries maintenance notices on ordinary pages — "システムメンテナンスの
- * お知らせ" in a banner does not mean the search is down, and treating it as an
- * outage would silently blind the monitor for as long as the notice is up.
+ * We report this and back off. We deliberately do NOT wait in the queue: a
+ * monitor sitting in line would take a place ahead of a real guest trying to
+ * book, and the whole point of the queue is to shed load. Trying again later is
+ * both politer and, at a ten-minute interval, perfectly effective.
  */
-export const BUSY_SIGNALS: readonly string[] = [
+export const QUEUE_SIGNALS: readonly string[] = [
+  'サイトが混雑しております',
+  'ただいまサイトが混雑',
+  '混雑しております',
   'アクセスが集中',
   'アクセスが混み合',
   'ただいま大変混み合',
-  'しばらく時間をおいて',
-  'しばらくたってから',
-  'ただいまメンテナンス',
-  'メンテナンス中',
-  'システムメンテナンス',
   'ただいまつながりにくく',
   '順番にご案内',
+  'お客様の順番になると',
+  '待ち時間の目安',
+  'アクセスできる推定時刻',
   '待機列',
+];
+
+/**
+ * The site is closed for maintenance (published as 03:00-05:00 JST).
+ *
+ * Like every other phrase list, these are only trusted on a page that shows no
+ * rooms at all. The waiting-room page itself carries the sentence "午前3時〜午前
+ * 5時は、システムメンテナンスのため…" as a note, so matching maintenance wording
+ * anywhere would mislabel a queue as an outage.
+ */
+export const MAINTENANCE_SIGNALS: readonly string[] = [
+  'ただいまメンテナンス',
+  'メンテナンス中',
+  'システムメンテナンスのため',
+  'システムメンテナンス',
+  'しばらく時間をおいて',
+  'しばらくたってから',
 ];
 
 /**

@@ -307,13 +307,13 @@ describe('official site maintenance', () => {
 
   const maintenanceResult = (): CheckResult => ({
     ...stubResult('network_error'),
-    reason: 'Site is busy or under maintenance (システムメンテナンス)',
-    signals: ['busy:システムメンテナンス'],
+    reason: 'Site is holding visitors in a queue (混雑しております)',
+    signals: ['busy:queue:混雑しております'],
   });
 
   it('records that the site, not the monitor, is down', async () => {
     await runCheckCycle(deps(maintenanceResult()), WATCH);
-    assert.ok(storage.getSystemState(SYSTEM_KEYS.maintenanceSince));
+    assert.ok(storage.getSystemState(SYSTEM_KEYS.siteBusySince));
   });
 
   it('stays quiet overnight instead of waking you at 3am', async () => {
@@ -330,7 +330,7 @@ describe('official site maintenance', () => {
     await runCheckCycle(deps(maintenanceResult()), WATCH);
     // Pretend the "maintenance" has been going on for most of a day.
     storage.setSystemState(
-      SYSTEM_KEYS.maintenanceSince,
+      SYSTEM_KEYS.siteBusySince,
       new Date(Date.now() - 20 * 60 * 60_000).toISOString(),
     );
     storage.setSystemState(
@@ -345,7 +345,7 @@ describe('official site maintenance', () => {
   it('clears the maintenance flag as soon as a check succeeds', async () => {
     await runCheckCycle(deps(maintenanceResult()), WATCH);
     await runCheckCycle(deps(stubResult('unavailable')), WATCH);
-    assert.equal(storage.getSystemState(SYSTEM_KEYS.maintenanceSince), '');
+    assert.equal(storage.getSystemState(SYSTEM_KEYS.siteBusySince), '');
 
     // ...so a later unrelated outage still alarms normally.
     storage.setSystemState(

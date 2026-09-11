@@ -112,6 +112,13 @@ export function runStatusCommand(): number {
       }\n\n`,
     );
 
+    const busySince = storage.getSystemState(SYSTEM_KEYS.siteBusySince);
+    if (busySince) {
+      out.write(
+        `Official site:\nsaying "come back later" (queue or maintenance) since ${fmt(busySince)}\n\n`,
+      );
+    }
+
     const staleAlert = storage.isAlertActive('stale', 'global');
     if (staleAlert) out.write('⚠️  A "no successful check" alert is currently active.\n\n');
 

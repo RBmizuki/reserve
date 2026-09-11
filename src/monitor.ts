@@ -26,11 +26,11 @@ import { openStorage, type Storage } from './storage/sqlite.js';
 
 const TICK_MS = 30_000;
 /**
- * How long the official site may report maintenance before we raise the alarm
- * anyway. Published maintenance runs a few minutes inside a 02:00-07:00 window,
- * so anything beyond a few hours is no longer routine and is worth knowing about.
+ * How long the official site may keep saying "come back later" — a queue, or
+ * the published 03:00-05:00 maintenance window — before we raise the alarm
+ * anyway. Either is routine for minutes at a time; hours of it is not.
  */
-const MAINTENANCE_GRACE_MINUTES = 180;
+const SITE_BUSY_GRACE_MINUTES = 180;
 /** A tick this much later than expected means the machine was asleep. */
 const SLEEP_GAP_MS = TICK_MS * 4;
 const LOCK_FILE = path.join(PATHS.data, 'monitor.lock');
@@ -123,14 +123,14 @@ export async function checkStaleness(deps: CycleDeps): Promise<void> {
   const stale = ageMs > settings.staleAfterMinutes * 60_000;
 
   if (stale) {
-    // The site saying "we are down for maintenance" is a working monitor
-    // reporting an outage, not a blind one. Stay quiet for a few hours.
-    const maintenanceSince = storage.getSystemState(SYSTEM_KEYS.maintenanceSince);
-    if (maintenanceSince) {
-      const maintenanceMs = Date.now() - new Date(maintenanceSince).getTime();
-      if (Number.isFinite(maintenanceMs) && maintenanceMs < MAINTENANCE_GRACE_MINUTES * 60_000) {
-        logger.info('Holding the stale alert: the official site reports maintenance', {
-          minutes: Math.round(maintenanceMs / 60_000),
+    // The site telling us to come back later is a working monitor reporting an
+    // outage, not a blind one. Stay quiet for a few hours.
+    const busySince = storage.getSystemState(SYSTEM_KEYS.siteBusySince);
+    if (busySince) {
+      const busyMs = Date.now() - new Date(busySince).getTime();
+      if (Number.isFinite(busyMs) && busyMs < SITE_BUSY_GRACE_MINUTES * 60_000) {
+        logger.info('Holding the stale alert: the official site says to come back later', {
+          minutes: Math.round(busyMs / 60_000),
         });
         return;
       }

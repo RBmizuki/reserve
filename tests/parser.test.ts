@@ -159,3 +159,45 @@ describe('notices on a working page', () => {
     assert.equal(parseAvailability(page, PARSE_OPTIONS).outcome, 'captcha');
   });
 });
+
+/**
+ * The official site puts visitors in a virtual waiting room when it is busy.
+ * Its instructions include "午前3時〜午前5時は、システムメンテナンスのため…",
+ * which is how a real check came back labelled as maintenance at 23:13 — hours
+ * outside the published window, and confusing to act on.
+ */
+describe('virtual waiting room', () => {
+  const queue = () => parseAvailability(fixture('queue-waiting-room.html'), PARSE_OPTIONS);
+
+  it('is reported as a queue, not as maintenance', () => {
+    const result = queue();
+    assert.equal(result.outcome, 'network_error');
+    assert.match(result.reason, /queue/);
+    assert.ok(!/under maintenance/.test(result.reason), 'the note about 3-5am must not win');
+    assert.ok(result.signals.every((s) => s.startsWith('busy:queue:')));
+  });
+
+  it('is never mistaken for the hotel being full', () => {
+    assert.notEqual(queue().outcome, 'unavailable');
+    assert.equal(queue().offers.length, 0);
+  });
+
+  it('says plainly that we retry later rather than waiting in line', () => {
+    assert.match(queue().reason, /not waiting in line/);
+  });
+
+  it('still recognises a genuine maintenance page as maintenance', () => {
+    const result = parseAvailability(fixture('maintenance.html'), PARSE_OPTIONS);
+    assert.equal(result.outcome, 'network_error');
+    assert.ok(result.signals.some((s) => s.startsWith('busy:maintenance:')));
+  });
+
+  it('does not let the queue wording hide a working results page', () => {
+    // Defensive: if the queue banner ever shipped alongside real results.
+    const page = fixture('available.html').replace(
+      '<h1>',
+      '<p>ただいまサイトが混雑しております</p><h1>',
+    );
+    assert.equal(parseAvailability(page, PARSE_OPTIONS).outcome, 'available');
+  });
+});
