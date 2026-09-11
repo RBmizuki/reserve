@@ -168,10 +168,17 @@ async function attempt(
   }
 }
 
+/**
+ * Called as the check moves between steps, so a CLI can show what it is
+ * waiting on instead of appearing frozen for a minute.
+ */
+export type ProgressReporter = (step: string) => void;
+
 /** Runs one check for one watch condition. Never throws. */
 export async function checkWatch(
   watch: WatchCondition,
   settings: MonitorSettings,
+  onProgress: ProgressReporter = () => undefined,
 ): Promise<CheckResult> {
   const hotel = resolveHotel(watch);
   const url = buildSearchUrl(watch);
@@ -190,6 +197,7 @@ export async function checkWatch(
   // --- robots.txt ----------------------------------------------------------
   if (settings.respectRobotsTxt) {
     try {
+      onProgress('checking robots.txt');
       const robots = await loadRobots(RESERVE_ORIGIN, userAgent());
       const pathWithQuery = new URL(url).pathname + new URL(url).search;
       if (!isPathAllowed(robots, pathWithQuery)) {
@@ -219,27 +227,44 @@ export async function checkWatch(
   }
 
   // --- fetch + parse -------------------------------------------------------
-  let last: { outcome: CheckOutcome; reason: string; signals: string[] } | null = null;
-  let lastHtml: string | null = null;
-  let lastStatus: number | null = null;
-  let lastTransport: TransportKind = 'http';
+  // Every attempt is kept, not just the last one. Otherwise a fallback that
+  // never gets off the ground (a missing Chromium, say) overwrites the result
+  // of the attempt that *did* fetch a page - throwing away both the reason and
+  // the HTML that would explain what actually went wrong.
+  interface AttemptRecord {
+    transport: TransportKind;
+    outcome: CheckOutcome;
+    reason: string;
+    signals: string[];
+    html: string | null;
+    httpStatus: number | null;
+  }
+  const attempts: AttemptRecord[] = [];
 
   for (const transport of transportOrder(settings)) {
     // Always capture a screenshot on browser attempts, into a scratch file. If
     // the check then fails we move that file into the snapshot instead of
     // fetching the page a second time just to photograph it.
+    onProgress(
+      transport === 'http'
+        ? 'requesting the official search page'
+        : 'retrying with a real browser (slower, first run also starts Chromium)',
+    );
     const result = await attempt(
       transport,
       url,
       settings,
       transport === 'playwright' ? pendingScreenshotPath() : undefined,
     );
-    lastTransport = transport;
-    lastStatus = result.httpStatus;
-    lastHtml = result.html;
-
     if (result.failure) {
-      last = { ...result.failure, signals: [`transport:${transport}`] };
+      attempts.push({
+        transport,
+        outcome: result.failure.outcome,
+        reason: result.failure.reason,
+        signals: [`transport:${transport}`],
+        html: result.html,
+        httpStatus: result.httpStatus,
+      });
       // A network error or an access block is not something a different
       // transport should paper over: stop and back off.
       if (result.failure.outcome !== 'parser_error') break;
@@ -250,12 +275,20 @@ export async function checkWatch(
       continue;
     }
 
+    onProgress('reading the page');
     const parsed = parseAvailability(result.html ?? '', {
       hotelCode: hotel.code,
       hotelName: hotel.name,
       fallbackUrl: bookingLink,
     });
-    last = { outcome: parsed.outcome, reason: parsed.reason, signals: parsed.signals };
+    attempts.push({
+      transport,
+      outcome: parsed.outcome,
+      reason: parsed.reason,
+      signals: parsed.signals,
+      html: result.html,
+      httpStatus: result.httpStatus,
+    });
 
     if (parsed.outcome === 'available' || parsed.outcome === 'unavailable') {
       if (settings.transport === 'auto') {
@@ -287,22 +320,34 @@ export async function checkWatch(
     });
   }
 
-  const outcome = last?.outcome ?? 'parser_error';
-  const reason = last?.reason ?? 'No transport produced a result';
-  const signals = last?.signals ?? [];
+  // The attempt that actually came back with a page is the one worth acting on
+  // and the one worth saving: it reflects the official site rather than a local
+  // setup problem. Fall back to the first attempt when nothing fetched anything.
+  const withPage = attempts.find((a) => a.html !== null);
+  const primary = withPage ?? attempts[0];
+
+  const outcome = primary?.outcome ?? 'parser_error';
+  const signals = primary?.signals ?? [];
+  // With more than one attempt, report all of them: hiding the HTTP reason
+  // behind the browser's error is exactly what makes this hard to diagnose.
+  const reason =
+    attempts.length > 1
+      ? attempts.map((a) => `${a.transport}: ${a.reason}`).join(' | ')
+      : (primary?.reason ?? 'No transport produced a result');
 
   // --- debug snapshot ------------------------------------------------------
   let debugDir: string | null = null;
   if (settings.saveDebugOnParserError && (outcome === 'parser_error' || outcome === 'captcha')) {
+    const httpStatus = primary?.httpStatus ?? null;
     debugDir = saveDebugSnapshot({
       watchId: watch.id,
       url,
-      html: lastHtml,
+      html: withPage?.html ?? null,
       reason,
       signals,
-      transport: lastTransport,
-      includePendingScreenshot: lastTransport === 'playwright',
-      ...(lastStatus !== null ? { httpStatus: lastStatus } : {}),
+      transport: primary?.transport ?? 'http',
+      includePendingScreenshot: attempts.some((a) => a.transport === 'playwright'),
+      ...(httpStatus !== null ? { httpStatus } : {}),
     });
   }
 
@@ -311,8 +356,8 @@ export async function checkWatch(
     outcome,
     reason,
     signals,
-    transport: lastTransport,
-    httpStatus: lastStatus,
+    transport: primary?.transport ?? 'http',
+    httpStatus: primary?.httpStatus ?? null,
     durationMs: Date.now() - startedAt,
     debugDir,
   };

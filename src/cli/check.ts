@@ -33,6 +33,56 @@ function resultLabel(summary: CycleSummary): string {
   }
 }
 
+/**
+ * Runs `task`, showing what it is currently waiting on.
+ *
+ * Without this the command sits silent for up to a minute per condition while
+ * it waits on the network, which is indistinguishable from having hung.
+ */
+async function withProgress<T>(task: (report: (step: string) => void) => Promise<T>): Promise<T> {
+  const out = process.stdout;
+  const startedAt = Date.now();
+  let step = 'starting';
+
+  // Piped or redirected: a spinner would just be control-character noise, so
+  // print each step on its own line instead.
+  if (out.isTTY !== true) {
+    return task((next) => {
+      step = next;
+      out.write(`  ... ${step}\n`);
+    });
+  }
+
+  const frames = [
+    '\u280b',
+    '\u2819',
+    '\u2839',
+    '\u2838',
+    '\u283c',
+    '\u2834',
+    '\u2826',
+    '\u2827',
+    '\u2807',
+    '\u280f',
+  ];
+  let frame = 0;
+  const render = (): void => {
+    const seconds = Math.round((Date.now() - startedAt) / 1000);
+    out.write(`\r\u001b[2K${frames[frame++ % frames.length]} ${step}... ${seconds}s`);
+  };
+  const timer = setInterval(render, 120);
+  render();
+  try {
+    return await task((next) => {
+      step = next;
+      render();
+    });
+  } finally {
+    clearInterval(timer);
+    out.write('\r\u001b[2K');
+  }
+}
+
 export async function runCheckCommand(dryRun: boolean, onlyWatchId?: string): Promise<number> {
   const config = loadConfig();
   let watches = enabledWatches(config);
@@ -61,6 +111,7 @@ export async function runCheckCommand(dryRun: boolean, onlyWatchId?: string): Pr
   const out = process.stdout;
   out.write('\nMiracosta Monitor\n');
   if (dryRun) out.write('(dry run — no LINE message will actually be sent)\n');
+  out.write('(a check can take up to a minute per condition — it is waiting on the site)\n');
 
   let exitCode = 0;
   try {
@@ -74,7 +125,9 @@ export async function runCheckCommand(dryRun: boolean, onlyWatchId?: string): Pr
         `Rooms filter:\n${watch.roomKeywords.length > 0 ? watch.roomKeywords.join(' AND ') : '(any room in this hotel)'}\n\n`,
       );
 
-      const summary = await runCheckCycle(deps, watch);
+      const summary = await withProgress((report) =>
+        runCheckCycle({ ...deps, onProgress: report }, watch),
+      );
 
       out.write(`Result:\n${resultLabel(summary)}\n\n`);
       out.write(`Detail:\n${summary.reason}\n\n`);

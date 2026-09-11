@@ -163,6 +163,21 @@ npm install
 added 178 packages in 25s
 ```
 
+続けて、**ブラウザ（Chromium）を1回だけダウンロード**します。
+
+```bash
+npx playwright install chromium
+```
+
+**これは何をしているのか**
+公式サイトが JavaScript で描画している場合に備えた「予備の取得方法」です。
+通常は使いませんが、入れておかないといざという時に `UNKNOWN` しか返せません。
+約150MB、2〜5分かかります。
+
+**正常なら** `Chromium ... downloaded to ...` と表示されます。
+
+> `npm install` だけでは入らないことがあります。必ずこのコマンドも実行してください。
+
 **失敗したら**
 
 - `EACCES` → 権限エラー。`sudo` は使わず、フォルダの場所を `~/` の下に変えてください
@@ -181,6 +196,7 @@ npm run setup
 - `config/watch.json`（監視条件ファイル）を雛形から作る
 - Node.js のバージョンを確認する
 - LINE の設定ができているか確認する
+- Chromium（予備の取得方法）が入っているか確認する
 - 公式サイトの robots.txt を読んで、アクセスしてよいか確認する
 
 **正常なら**チェックリストが並び、最後に「Next steps」が出ます。
@@ -1024,6 +1040,15 @@ npm run test-line
 空室判定を安全に停止しました。
 ```
 
+**まず `Detail:` 行を読んでください。** 取得方法ごとの理由が `|` で区切って出ます：
+
+```
+Detail:
+http: Page did not contain room rows... | playwright: Could not start Chromium...
+```
+
+`http:` の側が本当の原因です（`playwright:` 側は予備の取得方法の話）。
+
 **調べ方**：
 
 ```bash
@@ -1039,6 +1064,18 @@ npm run capture
 日本語フレーズ一覧を更新する必要があります。
 
 保存されたファイルには Cookie・トークン・入力値・個人情報は含まれません。
+
+### `Could not start Chromium` / `Executable doesn't exist` と出た
+
+予備のブラウザがインストールされていません。1回だけ実行してください。
+
+```bash
+npx playwright install chromium
+npm run check
+```
+
+**なお、このエラーが出たということは、通常のHTTP取得では読めなかったということです。**
+Chromium を入れて再実行しても `UNKNOWN` のままなら、次の項目へ進んでください。
 
 ### `STOPPED (bot-check page detected)` と出た
 

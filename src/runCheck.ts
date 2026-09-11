@@ -4,7 +4,7 @@
  * Shared by `npm run check` (one shot) and `npm run monitor` (forever), so the
  * two can never drift apart in behaviour.
  */
-import { checkWatch, type CheckResult } from './checker/disney.js';
+import { checkWatch, type CheckResult, type ProgressReporter } from './checker/disney.js';
 import { logger } from './logger.js';
 import { LineNotifier } from './notification/line.js';
 import {
@@ -33,6 +33,8 @@ export interface CycleDeps {
    * the tests substitute a stub so they never touch the official site.
    */
   check?: (watch: WatchCondition, settings: MonitorSettings) => Promise<CheckResult>;
+  /** Optional progress callback, used by `npm run check` to show a spinner. */
+  onProgress?: ProgressReporter;
 }
 
 export interface CycleSummary {
@@ -94,7 +96,9 @@ export async function runCheckCycle(deps: CycleDeps, watch: WatchCondition): Pro
   storage.upsertWatchCondition(watch);
   storage.setSystemState(SYSTEM_KEYS.lastCheck, nowIso);
 
-  const result = await (deps.check ?? checkWatch)(watch, settings);
+  const result = deps.check
+    ? await deps.check(watch, settings)
+    : await checkWatch(watch, settings, deps.onProgress);
   const runtime = storage.getWatchRuntime(watch.id);
   runtime.lastCheckAt = nowIso;
 

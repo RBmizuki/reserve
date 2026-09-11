@@ -107,8 +107,20 @@ export async function runSetupCommand(): Promise<number> {
     out.write('     Verify it actually works with:  npm run test-line\n');
   }
 
-  // 5. Official site --------------------------------------------------------
-  out.write('\n5) Official reservation site\n');
+  // 5. Browser fallback -----------------------------------------------------
+  out.write('\n5) Browser fallback (Playwright)\n');
+  const browser = await browserStatus();
+  if (browser.ready) {
+    ok('Chromium is installed, so the browser fallback is available');
+  } else {
+    warn('Chromium is NOT installed, so only the plain HTTP method can be used.');
+    out.write('     If the site turns out to need JavaScript, checks will report UNKNOWN.\n');
+    out.write('     Install it once (about 150 MB):\n');
+    out.write('       npx playwright install chromium\n');
+  }
+
+  // 6. Official site --------------------------------------------------------
+  out.write('\n6) Official reservation site\n');
   const firstWatch = config.watches[0];
   if (!firstWatch) {
     bad('No watch conditions found.');
@@ -140,4 +152,20 @@ export async function runSetupCommand(): Promise<number> {
   out.write('  2. npm run check          # one real availability check\n');
   out.write('  3. npm run install-service # run it 24/7 in the background\n\n');
   return 0;
+}
+
+/**
+ * Checks whether Playwright's Chromium has actually been downloaded.
+ *
+ * `npm install` does not always fetch it, and the failure only shows up later
+ * as an unreadable page, so it is worth saying so up front.
+ */
+async function browserStatus(): Promise<{ ready: boolean }> {
+  try {
+    const { chromium } = await import('playwright');
+    const path = chromium.executablePath();
+    return { ready: fs.existsSync(path) };
+  } catch {
+    return { ready: false };
+  }
 }
