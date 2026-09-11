@@ -213,3 +213,100 @@ describe('LineNotifier', () => {
     assert.match(result.error ?? '', /LINE_CHANNEL_ACCESS_TOKEN/);
   });
 });
+
+describe('choosing recipients', () => {
+  let originalFetch: typeof fetch;
+  const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    requests.length = 0;
+    process.env.LINE_CHANNEL_ACCESS_TOKEN = FAKE_TOKEN;
+    delete process.env.LINE_USER_ID;
+    delete process.env.LINE_TO;
+    delete process.env.LINE_BROADCAST;
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      requests.push({ url, body: JSON.parse(String(init.body)) });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    delete process.env.LINE_CHANNEL_ACCESS_TOKEN;
+    delete process.env.LINE_USER_ID;
+    delete process.env.LINE_TO;
+    delete process.env.LINE_BROADCAST;
+  });
+
+  const USER_A = 'U0123456789abcdef0123456789abcdef';
+  const USER_B = 'Ufedcba9876543210fedcba9876543210';
+  const GROUP = 'C1111111111111111111111111111111a';
+
+  const send = async (): Promise<{ ok: boolean; error?: string }> =>
+    new LineNotifier({ sleep: async () => undefined }).send('hi');
+
+  it('uses push for a single user', async () => {
+    process.env.LINE_TO = USER_A;
+    assert.equal((await send()).ok, true);
+    assert.equal(requests.length, 1);
+    assert.match(requests[0]?.url ?? '', /\/message\/push$/);
+    assert.equal(requests[0]?.body.to, USER_A);
+  });
+
+  it('uses one multicast request for several users', async () => {
+    process.env.LINE_TO = `${USER_A},${USER_B}`;
+    assert.equal((await send()).ok, true);
+    assert.equal(requests.length, 1, 'two friends should cost one API call, not two');
+    assert.match(requests[0]?.url ?? '', /\/message\/multicast$/);
+    assert.deepEqual(requests[0]?.body.to, [USER_A, USER_B]);
+  });
+
+  it('broadcasts to every friend when LINE_BROADCAST is set, with no ids', async () => {
+    process.env.LINE_BROADCAST = '1';
+    assert.equal((await send()).ok, true);
+    assert.equal(requests.length, 1);
+    assert.match(requests[0]?.url ?? '', /\/message\/broadcast$/);
+    assert.equal(requests[0]?.body.to, undefined, 'broadcast must not carry recipient ids');
+    assert.match(LineNotifier.describeRecipients(), /everyone who added the bot/);
+  });
+
+  it('still works with the old LINE_USER_ID name', async () => {
+    process.env.LINE_USER_ID = USER_A;
+    assert.equal((await send()).ok, true);
+    assert.equal(requests[0]?.body.to, USER_A);
+  });
+
+  it('merges LINE_TO and LINE_USER_ID without duplicating a shared id', async () => {
+    process.env.LINE_TO = `${USER_A},${USER_B}`;
+    process.env.LINE_USER_ID = USER_A;
+    assert.equal((await send()).ok, true);
+    assert.deepEqual(requests[0]?.body.to, [USER_A, USER_B]);
+  });
+
+  it('sends group chats their own push, since multicast cannot take them', async () => {
+    process.env.LINE_TO = `${USER_A},${USER_B},${GROUP}`;
+    assert.equal((await send()).ok, true);
+    assert.equal(requests.length, 2);
+    assert.match(requests[0]?.url ?? '', /\/message\/multicast$/);
+    assert.match(requests[1]?.url ?? '', /\/message\/push$/);
+    assert.equal(requests[1]?.body.to, GROUP);
+  });
+
+  it('rejects a malformed id instead of silently dropping that person', async () => {
+    process.env.LINE_TO = `${USER_A},not-a-real-id`;
+    const result = await send();
+    assert.equal(result.ok, false);
+    assert.match(result.error ?? '', /not valid LINE ids/);
+    assert.equal(requests.length, 0, 'nothing should be sent until the config is fixed');
+  });
+
+  it('describes who will be notified', () => {
+    process.env.LINE_TO = `${USER_A},${USER_B},${GROUP}`;
+    assert.equal(LineNotifier.describeRecipients(), '2 people + 1 group/room chat');
+  });
+
+  it('is not configured when a token exists but nobody is addressed', () => {
+    assert.equal(LineNotifier.isConfigured(), false);
+  });
+});

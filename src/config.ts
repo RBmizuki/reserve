@@ -41,7 +41,34 @@ export function loadEnv(): void {
 
 export interface LineCredentials {
   channelAccessToken: string;
-  userId: string;
+  /**
+   * Explicit recipients: LINE user ids (U...), group ids (C...) or room ids
+   * (R...). Empty when `broadcast` is true.
+   */
+  recipients: string[];
+  /**
+   * Send to every user who has added the bot as a friend, instead of to a
+   * fixed list. This is the only way to reach someone else without running a
+   * webhook server, because a friend's user id is never shown in the LINE
+   * Developers console — it only arrives in a webhook event.
+   */
+  broadcast: boolean;
+}
+
+/** LINE ids are a type prefix plus 32 hex characters. */
+export const LINE_ID_PATTERN = /^[URC][0-9a-f]{32}$/;
+
+/** Splits a comma/whitespace separated recipient list. */
+export function parseRecipients(raw: string): string[] {
+  return raw
+    .split(/[,\s]+/)
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+}
+
+function envFlag(name: string): boolean {
+  const raw = (process.env[name] ?? '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes';
 }
 
 /**
@@ -51,9 +78,24 @@ export interface LineCredentials {
 export function readLineCredentials(): LineCredentials | null {
   loadEnv();
   const channelAccessToken = (process.env.LINE_CHANNEL_ACCESS_TOKEN ?? '').trim();
-  const userId = (process.env.LINE_USER_ID ?? '').trim();
-  if (!channelAccessToken || !userId) return null;
-  return { channelAccessToken, userId };
+  if (!channelAccessToken) return null;
+
+  const broadcast = envFlag('LINE_BROADCAST');
+  // LINE_TO is the current name; LINE_USER_ID is kept working so an existing
+  // .env does not break. Both accept a comma-separated list.
+  const recipients = parseRecipients(
+    `${process.env.LINE_TO ?? ''},${process.env.LINE_USER_ID ?? ''}`,
+  );
+  const unique = [...new Set(recipients)];
+
+  if (broadcast) return { channelAccessToken, recipients: unique, broadcast: true };
+  if (unique.length === 0) return null;
+  return { channelAccessToken, recipients: unique, broadcast: false };
+}
+
+/** Recipient ids that are not a valid LINE id, for a clear error message. */
+export function invalidRecipients(recipients: string[]): string[] {
+  return recipients.filter((id) => !LINE_ID_PATTERN.test(id));
 }
 
 export const DEFAULT_SETTINGS: MonitorSettings = {

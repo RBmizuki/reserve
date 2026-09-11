@@ -9,11 +9,13 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   ensureRuntimeDirs,
+  invalidRecipients,
   loadConfig,
   PATHS,
   readLineCredentials,
   watchConfigPath,
 } from '../config.js';
+import { LineNotifier } from '../notification/line.js';
 import { userAgent } from '../checker/http.js';
 import { isPathAllowed, loadRobots } from '../checker/robots.js';
 import { buildSearchUrl, RESERVE_ORIGIN } from '../checker/url.js';
@@ -93,11 +95,16 @@ export async function runSetupCommand(): Promise<number> {
     out.write('       cp .env.example .env\n');
     out.write('     Then open .env and paste your two LINE values (README steps 5-10).\n');
   } else if (readLineCredentials() === null) {
-    warn('.env exists but LINE_CHANNEL_ACCESS_TOKEN / LINE_USER_ID are still empty.');
+    warn('.env exists but the LINE settings are incomplete.');
+    out.write('     Needed: LINE_CHANNEL_ACCESS_TOKEN, plus LINE_BROADCAST=1 or LINE_TO\n');
     out.write('     Fill them in following README steps 5-10, then run:  npm run test-line\n');
   } else {
-    ok('LINE_CHANNEL_ACCESS_TOKEN and LINE_USER_ID are set');
-    out.write('     Verify they actually work with:  npm run test-line\n');
+    ok(`LINE is configured — notifications go to: ${LineNotifier.describeRecipients()}`);
+    const bad = invalidRecipients(readLineCredentials()?.recipients ?? []);
+    if (bad.length > 0) {
+      warn(`${bad.length} recipient id(s) are malformed (expected U/C/R + 32 hex characters).`);
+    }
+    out.write('     Verify it actually works with:  npm run test-line\n');
   }
 
   // 5. Official site --------------------------------------------------------

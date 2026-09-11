@@ -11,8 +11,8 @@ const PATTERNS: Array<[RegExp, string]> = [
   // LINE channel access tokens are long base64-ish strings; also covers JWT-style v2.1 tokens.
   [/\b[A-Za-z0-9+/]{80,}={0,2}\b/g, '[REDACTED_TOKEN]'],
   [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, '[REDACTED_JWT]'],
-  // LINE user ids: "U" + 32 hex chars.
-  [/\bU[0-9a-f]{32}\b/g, '[REDACTED_LINE_USER_ID]'],
+  // LINE ids: U = person, C = group chat, R = multi-person chat, + 32 hex chars.
+  [/\b[URC][0-9a-f]{32}\b/g, '[REDACTED_LINE_ID]'],
   // Header-ish and key=value shapes. These consume the rest of the line: an
   // "Authorization: Bearer <token>" header must not leave the token behind
   // just because "Bearer" happened to be the first whitespace-delimited word.
@@ -32,10 +32,16 @@ const PATTERNS: Array<[RegExp, string]> = [
  */
 function liveSecrets(): string[] {
   const out: string[] = [];
-  for (const key of ['LINE_CHANNEL_ACCESS_TOKEN', 'LINE_USER_ID']) {
+  for (const key of ['LINE_CHANNEL_ACCESS_TOKEN', 'LINE_USER_ID', 'LINE_TO']) {
     const value = process.env[key];
-    // Ignore very short values: redacting them would mangle unrelated text.
-    if (value && value.trim().length >= 8) out.push(value.trim());
+    if (!value) continue;
+    // Recipient lists are comma separated; redact each id, not the whole blob,
+    // so a single malformed entry cannot leave the others readable.
+    for (const part of value.split(/[,\s]+/)) {
+      const trimmed = part.trim();
+      // Ignore very short values: redacting them would mangle unrelated text.
+      if (trimmed.length >= 8) out.push(trimmed);
+    }
   }
   return out;
 }

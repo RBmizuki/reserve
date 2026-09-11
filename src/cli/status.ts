@@ -105,7 +105,11 @@ export function runStatusCommand(): number {
     out.write(`Last successful check:\n${fmt(lastSuccess)}${ago(lastSuccess)}\n\n`);
     out.write(`Last heartbeat:\n${fmt(heartbeat)}${ago(heartbeat)}\n\n`);
     out.write(
-      `LINE:\n${LineNotifier.isConfigured() ? 'OK (token and user id are set)' : 'NOT CONFIGURED — see README step 10'}\n\n`,
+      `LINE:\n${
+        LineNotifier.isConfigured()
+          ? `OK — ${LineNotifier.describeRecipients()}`
+          : 'NOT CONFIGURED — see README step 10'
+      }\n\n`,
     );
 
     const staleAlert = storage.isAlertActive('stale', 'global');
