@@ -22,6 +22,8 @@ export const SYSTEM_KEYS = {
   lastSuccessfulCheck: 'lastSuccessfulCheck',
   monitorPid: 'monitorPid',
   monitorStartedAt: 'monitorStartedAt',
+  /** Set while the official site is positively reporting maintenance. */
+  maintenanceSince: 'maintenanceSince',
 } as const;
 
 export interface CycleDeps {
@@ -115,6 +117,7 @@ export async function runCheckCycle(deps: CycleDeps, watch: WatchCondition): Pro
     runtime.lastSuccessAt = nowIso;
     runtime.suspendedReason = null;
     storage.setSystemState(SYSTEM_KEYS.lastSuccessfulCheck, nowIso);
+    storage.setSystemState(SYSTEM_KEYS.maintenanceSince, '');
 
     // The site is readable again: retract any structural alerts.
     if (runtime.monitorBroken === 1) {
@@ -164,6 +167,19 @@ export async function runCheckCycle(deps: CycleDeps, watch: WatchCondition): Pro
   } else {
     runtime.state = 'unknown';
     runtime.consecutiveErrors += 1;
+
+    // Remember that the site itself told us it is down. This is not the
+    // monitor being blind, so it must not raise the "no successful check"
+    // alarm at 3am during the official maintenance window.
+    if (result.outcome === 'network_error' && result.signals.some((s) => s.startsWith('busy:'))) {
+      if (!storage.getSystemState(SYSTEM_KEYS.maintenanceSince)) {
+        storage.setSystemState(SYSTEM_KEYS.maintenanceSince, nowIso);
+        logger.info('Official site reports maintenance or congestion', {
+          watch: watch.id,
+          reason: result.reason,
+        });
+      }
+    }
 
     if (result.outcome === 'captcha') {
       // Never attempt to get past a bot check: stop this watch and tell the user.

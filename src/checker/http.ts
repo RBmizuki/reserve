@@ -94,5 +94,14 @@ export async function fetchViaHttp(
   const html = await response.text();
   logger.debug('http fetch complete', { status: response.status, bytes: html.length, durationMs });
 
-  return { url, status: response.status, html, transport: 'http', durationMs };
+  // response.url is the post-redirect address: landing on the maintenance page
+  // is a much stronger signal than any phrase found in the body.
+  return {
+    url,
+    finalUrl: response.url || url,
+    status: response.status,
+    html,
+    transport: 'http',
+    durationMs,
+  };
 }

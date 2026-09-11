@@ -277,3 +277,82 @@ describe('stale monitoring alert', () => {
     assert.equal(notifier.sent.length, 0);
   });
 });
+
+/**
+ * The official site publishes maintenance windows (roughly 02:00-07:00). A
+ * monitor that reports "I cannot check" during a published outage is working
+ * correctly, so it must not raise the "monitoring is blind" alarm overnight -
+ * while still raising it if the outage stops looking routine.
+ */
+describe('official site maintenance', () => {
+  let storage: Storage;
+  let notifier: RecordingNotifier;
+
+  beforeEach(() => {
+    setConsoleEcho(false);
+    storage = new Storage(':memory:');
+    notifier = new RecordingNotifier();
+  });
+  afterEach(() => {
+    storage.close();
+    setConsoleEcho(true);
+  });
+
+  const deps = (result?: CheckResult): CycleDeps => ({
+    storage,
+    notifier,
+    settings: makeSettings({ staleAfterMinutes: 30 }),
+    ...(result ? { check: async () => result } : {}),
+  });
+
+  const maintenanceResult = (): CheckResult => ({
+    ...stubResult('network_error'),
+    reason: 'Site is busy or under maintenance (システムメンテナンス)',
+    signals: ['busy:システムメンテナンス'],
+  });
+
+  it('records that the site, not the monitor, is down', async () => {
+    await runCheckCycle(deps(maintenanceResult()), WATCH);
+    assert.ok(storage.getSystemState(SYSTEM_KEYS.maintenanceSince));
+  });
+
+  it('stays quiet overnight instead of waking you at 3am', async () => {
+    await runCheckCycle(deps(maintenanceResult()), WATCH);
+    storage.setSystemState(
+      SYSTEM_KEYS.lastSuccessfulCheck,
+      new Date(Date.now() - 45 * 60_000).toISOString(),
+    );
+    await checkStaleness(deps());
+    assert.equal(notifier.sent.length, 0, 'a published outage is not a monitor failure');
+  });
+
+  it('does raise the alarm once the outage stops looking routine', async () => {
+    await runCheckCycle(deps(maintenanceResult()), WATCH);
+    // Pretend the "maintenance" has been going on for most of a day.
+    storage.setSystemState(
+      SYSTEM_KEYS.maintenanceSince,
+      new Date(Date.now() - 20 * 60 * 60_000).toISOString(),
+    );
+    storage.setSystemState(
+      SYSTEM_KEYS.lastSuccessfulCheck,
+      new Date(Date.now() - 20 * 60 * 60_000).toISOString(),
+    );
+    await checkStaleness(deps());
+    assert.equal(notifier.sent.length, 1);
+    assert.match(notifier.sent[0] ?? '', /監視異常/);
+  });
+
+  it('clears the maintenance flag as soon as a check succeeds', async () => {
+    await runCheckCycle(deps(maintenanceResult()), WATCH);
+    await runCheckCycle(deps(stubResult('unavailable')), WATCH);
+    assert.equal(storage.getSystemState(SYSTEM_KEYS.maintenanceSince), '');
+
+    // ...so a later unrelated outage still alarms normally.
+    storage.setSystemState(
+      SYSTEM_KEYS.lastSuccessfulCheck,
+      new Date(Date.now() - 45 * 60_000).toISOString(),
+    );
+    await checkStaleness(deps());
+    assert.equal(notifier.sent.length, 1);
+  });
+});

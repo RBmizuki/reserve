@@ -16,10 +16,13 @@ export function normalizeText(input: string): string {
 }
 
 /**
- * A CAPTCHA or bot-check interstitial. We never attempt to solve these — the
- * watch is suspended and the user is told.
+ * Technical markers of a CAPTCHA or bot-check interstitial.
+ *
+ * These are machinery, not prose: a normal search-result page has no reason to
+ * contain them, so finding one anywhere is decisive. We never attempt to solve
+ * these — the watch is suspended and the user is told.
  */
-export const CAPTCHA_SIGNALS: readonly string[] = [
+export const CAPTCHA_STRONG_SIGNALS: readonly string[] = [
   'g-recaptcha',
   'recaptcha/api.js',
   'www.google.com/recaptcha',
@@ -30,10 +33,20 @@ export const CAPTCHA_SIGNALS: readonly string[] = [
   'Attention Required! | Cloudflare',
   '_Incapsula_Resource',
   'Request unsuccessful. Incapsula incident ID',
-  'Access Denied',
-  'You don’t have permission to access',
   'errors.edgesuite.net',
   'Reference #18.',
+];
+
+/**
+ * Wording that *describes* an access restriction.
+ *
+ * Unlike the markers above, this is ordinary prose that could plausibly appear
+ * in a help link or a notice on a perfectly working page, so it is only trusted
+ * when the page contains no room rows at all.
+ */
+export const CAPTCHA_WEAK_SIGNALS: readonly string[] = [
+  'Access Denied',
+  'You don’t have permission to access',
   'ロボットではないことを確認',
   'あなたがロボットではないこと',
   '自動化されたアクセス',
@@ -47,6 +60,11 @@ export const CAPTCHA_SIGNALS: readonly string[] = [
  * The site is up but telling us to come back later (queue / congestion /
  * maintenance). Treated like a network error: back off, do not conclude
  * anything about availability.
+ *
+ * These phrases are only trusted when the page shows no rooms. The official
+ * site carries maintenance notices on ordinary pages — "システムメンテナンスの
+ * お知らせ" in a banner does not mean the search is down, and treating it as an
+ * outage would silently blind the monitor for as long as the notice is up.
  */
 export const BUSY_SIGNALS: readonly string[] = [
   'アクセスが集中',
@@ -154,3 +172,9 @@ export const PRICE_PATTERN = /(?:[¥￥]\s?([0-9][0-9,]{2,})|([0-9][0-9,]{2,})\s
 export function matchedSignals(haystack: string, list: readonly string[]): string[] {
   return list.filter((needle) => haystack.includes(needle));
 }
+
+/**
+ * URL path of the official maintenance page. Landing here (after redirects) is
+ * unambiguous, unlike a phrase that might merely be announcing future downtime.
+ */
+export const MAINTENANCE_PATH = /\/error\/maintenance/i;

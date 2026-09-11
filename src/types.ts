@@ -95,6 +95,8 @@ export type TransportKind = 'http' | 'playwright';
 /** Raw page returned by a transport. */
 export interface FetchedPage {
   url: string;
+  /** Where the response actually came from, after any redirects. */
+  finalUrl: string;
   status: number;
   html: string;
   transport: TransportKind;

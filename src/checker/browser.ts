@@ -111,7 +111,7 @@ export async function fetchViaBrowser(
     const durationMs = Date.now() - startedAt;
     const status = response?.status() ?? 0;
     logger.debug('browser fetch complete', { status, bytes: html.length, durationMs });
-    return { url, status, html, transport: 'playwright', durationMs };
+    return { url, finalUrl: page.url() || url, status, html, transport: 'playwright', durationMs };
   } finally {
     await context.close().catch(() => undefined);
   }

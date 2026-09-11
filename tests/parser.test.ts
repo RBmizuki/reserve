@@ -104,3 +104,58 @@ describe('parseAvailability', () => {
     }
   });
 });
+
+/**
+ * Regression: a real check reported "Site is busy or under maintenance" at
+ * 23:13, outside the official 2:00-7:00 maintenance window. The cause was that
+ * maintenance wording was matched against the whole page before the room rows
+ * were even looked at, so a notice banner about *future* downtime silently
+ * disabled the monitor.
+ */
+describe('notices on a working page', () => {
+  it('reads the rooms even when the page carries a maintenance notice', () => {
+    const result = parseAvailability(
+      fixture('available-with-maintenance-notice.html'),
+      PARSE_OPTIONS,
+    );
+    assert.equal(result.outcome, 'available', 'a banner must not mask the search results');
+    assert.equal(result.offers.length, 1);
+    assert.equal(result.offers[0]?.officialRoomCode, 'HOTDHMSPB0001N');
+  });
+
+  it('still detects a genuine maintenance page, which lists no rooms', () => {
+    const result = parseAvailability(fixture('maintenance.html'), PARSE_OPTIONS);
+    assert.equal(result.outcome, 'network_error');
+    assert.notEqual(result.outcome, 'unavailable');
+  });
+
+  it('trusts the official maintenance URL over anything in the body', () => {
+    const result = parseAvailability(fixture('available.html'), {
+      ...PARSE_OPTIONS,
+      finalUrl: 'https://reserve.tokyodisneyresort.jp/online/error/maintenance/planning',
+    });
+    assert.equal(result.outcome, 'network_error');
+    assert.match(result.reason, /maintenance page/);
+  });
+
+  it('only trusts access-restriction wording when no rooms are shown', () => {
+    // The phrase appears, but the page is plainly a working results page.
+    const page = fixture('available.html').replace(
+      '<h1>',
+      '<p><a href="/help">アクセスが制限されていますか？</a></p><h1>',
+    );
+    assert.equal(parseAvailability(page, PARSE_OPTIONS).outcome, 'available');
+
+    // With no rooms, the same phrase is taken at face value.
+    const blocked = '<html><body><h1>アクセスが制限されています</h1></body></html>';
+    assert.equal(parseAvailability(blocked, PARSE_OPTIONS).outcome, 'captcha');
+  });
+
+  it('still treats bot-check machinery as decisive, rooms or not', () => {
+    const page = fixture('available.html').replace(
+      '<h1>',
+      '<div class="g-recaptcha" data-sitekey="x"></div><h1>',
+    );
+    assert.equal(parseAvailability(page, PARSE_OPTIONS).outcome, 'captcha');
+  });
+});

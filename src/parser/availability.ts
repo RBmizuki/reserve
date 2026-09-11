@@ -13,7 +13,9 @@ import * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import {
   BUSY_SIGNALS,
-  CAPTCHA_SIGNALS,
+  CAPTCHA_STRONG_SIGNALS,
+  CAPTCHA_WEAK_SIGNALS,
+  MAINTENANCE_PATH,
   matchedSignals,
   normalizeText,
   OUT_OF_WINDOW_SIGNALS,
@@ -55,6 +57,8 @@ export interface ParseOptions {
   hotelName: string;
   /** Fallback link used when a room row has no usable public URL of its own. */
   fallbackUrl: string;
+  /** URL the response actually came from, after redirects. Optional. */
+  finalUrl?: string;
 }
 
 function stableKey(parts: Array<string | null>): string {
@@ -297,17 +301,29 @@ export function parseAvailability(body: string, options: ParseOptions): ParseRes
     };
   }
 
+  // 1. Being redirected to the official maintenance page is unambiguous.
+  if (options.finalUrl && MAINTENANCE_PATH.test(options.finalUrl)) {
+    return {
+      outcome: 'network_error',
+      offers: [],
+      rooms: [],
+      reason: 'Redirected to the official maintenance page',
+      signals: ['busy:maintenancePage'],
+    };
+  }
+
   const normalizedBody = normalizeText(body);
 
-  // 1. Bot-check / CAPTCHA. Checked first and never worked around.
-  const captcha = matchedSignals(normalizedBody, CAPTCHA_SIGNALS);
-  if (captcha.length > 0) {
+  // 2. Bot-check machinery. These markers have no business appearing on a
+  //    working page, so they are decisive wherever they turn up.
+  const strongCaptcha = matchedSignals(normalizedBody, CAPTCHA_STRONG_SIGNALS);
+  if (strongCaptcha.length > 0) {
     return {
       outcome: 'captcha',
       offers: [],
       rooms: [],
-      reason: `Bot-check or access-restriction page detected (${captcha[0]})`,
-      signals: captcha.map((s) => `captcha:${s}`),
+      reason: `Bot-check page detected (${strongCaptcha[0]})`,
+      signals: strongCaptcha.map((s) => `captcha:${s}`),
     };
   }
 
@@ -316,19 +332,11 @@ export function parseAvailability(body: string, options: ParseOptions): ParseRes
   $('script, style, noscript').remove();
   const visibleText = normalizeText($('body').length > 0 ? $('body').text() : $.root().text());
 
-  // 2. Congestion / maintenance: the site is asking us to come back later.
-  const busy = matchedSignals(visibleText, BUSY_SIGNALS);
-  if (busy.length > 0) {
-    return {
-      outcome: 'network_error',
-      offers: [],
-      rooms: [],
-      reason: `Site is busy or under maintenance (${busy[0]})`,
-      signals: busy.map((s) => `busy:${s}`),
-    };
-  }
-
   // 3. Room rows, anchored on the official room code.
+  //
+  //    This comes BEFORE any prose matching. The official site puts notices and
+  //    banners on ordinary pages, and a page that lists rooms is a working page
+  //    whatever else it happens to mention.
   const byCode = collectByRoomCode($, options);
   if (byCode.total > 0) {
     signals.push(`rooms:byRoomCode=${byCode.total}`);
@@ -362,7 +370,34 @@ export function parseAvailability(body: string, options: ParseOptions): ParseRes
     };
   }
 
-  // 4. No room codes at all. Look for an explicit "nothing available" message.
+  // From here on the page showed no rooms at all, so prose is all we have and
+  // it is safe to trust it.
+
+  // 4. Access restriction described in words.
+  const weakCaptcha = matchedSignals(visibleText, CAPTCHA_WEAK_SIGNALS);
+  if (weakCaptcha.length > 0) {
+    return {
+      outcome: 'captcha',
+      offers: [],
+      rooms: [],
+      reason: `Access-restriction page detected (${weakCaptcha[0]})`,
+      signals: weakCaptcha.map((s) => `captcha:${s}`),
+    };
+  }
+
+  // 5. Congestion / maintenance: the site is asking us to come back later.
+  const busy = matchedSignals(visibleText, BUSY_SIGNALS);
+  if (busy.length > 0) {
+    return {
+      outcome: 'network_error',
+      offers: [],
+      rooms: [],
+      reason: `Site is busy or under maintenance (${busy[0]})`,
+      signals: busy.map((s) => `busy:${s}`),
+    };
+  }
+
+  // 6. An explicit "nothing available" message.
   const soldOut = matchedSignals(visibleText, SOLD_OUT_SIGNALS);
   if (soldOut.length > 0) {
     return {

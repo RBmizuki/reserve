@@ -98,6 +98,7 @@ function transportOrder(settings: MonitorSettings): TransportKind[] {
 
 interface AttemptOutcome {
   html: string | null;
+  finalUrl: string | null;
   httpStatus: number | null;
   transport: TransportKind;
   /** Set when the transport itself failed. */
@@ -120,6 +121,7 @@ async function attempt(
     );
     return {
       html: page.html,
+      finalUrl: page.finalUrl,
       httpStatus: page.status,
       transport,
       failure: null,
@@ -130,6 +132,7 @@ async function attempt(
     if (err instanceof HttpTransportError) {
       return {
         html: null,
+        finalUrl: null,
         httpStatus: err.status,
         transport,
         failure: {
@@ -143,6 +146,7 @@ async function attempt(
     if (err instanceof BrowserUnavailableError) {
       return {
         html: null,
+        finalUrl: null,
         httpStatus: null,
         transport,
         failure: { outcome: 'parser_error', reason: err.message },
@@ -152,6 +156,7 @@ async function attempt(
     if (isNetworkError(err)) {
       return {
         html: null,
+        finalUrl: null,
         httpStatus: null,
         transport,
         failure: { outcome: 'network_error', reason: describeError(err) },
@@ -160,6 +165,7 @@ async function attempt(
     }
     return {
       html: null,
+      finalUrl: null,
       httpStatus: null,
       transport,
       failure: { outcome: 'parser_error', reason: describeError(err) },
@@ -280,6 +286,7 @@ export async function checkWatch(
       hotelCode: hotel.code,
       hotelName: hotel.name,
       fallbackUrl: bookingLink,
+      ...(result.finalUrl ? { finalUrl: result.finalUrl } : {}),
     });
     attempts.push({
       transport,
